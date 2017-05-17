@@ -58,7 +58,7 @@ def tabRequest(qry, name):
 
         # Create request using JSON, return data as JSON
         request = {}
-        request["FORMAT"] = "JSON"
+        request["FORMAT"] = "JSON+COLUMNNAME+METADATA"
         request["QUERY"] = qry
 
         #json.dumps = serialize obj (request dictionary) to a JSON formatted str
@@ -100,7 +100,7 @@ def tabRequest(qry, name):
 
     except:
         errorMsg()
-        Msg = 'Unknown error collecting tabular data for '
+        Msg = 'Unknown error collecting tabular data for ' + ws[3:]
         return False, Msg, None
 
 
@@ -143,17 +143,6 @@ def surfHoriz(keys):
 
     if surfHLogic:
 
-        #source a tempplate table
-        tTable = os.path.dirname(sys.argv[0]) + os.sep + "template_tables.gdb"  + os.sep + "SurfHrz"
-
-        #name the table to create
-        tbl = "SurfHrz" + ws[3:]
-
-        #create the table
-        arcpy.management.CreateTable(gdb, tbl ,tTable)
-
-        #identify fields for the cursor
-        surfHrzFlds = ['MUKEY', 'cokey', 'chkey', 'CompPct', 'CompName', 'CompKind', 'TaxCls', 'HrzThick', 'kffact', 'kwfact', 'totalSand', 'totalSilt', 'totalClay', 'VFSand', 'DBthirdbar', 'OM', 'KSat']
 
         #populate the table
         if "Table" in surfHrzRes:
@@ -161,13 +150,25 @@ def surfHoriz(keys):
             # get its value
             resLst = surfHrzRes["Table"]  # Data as a list of lists. All values come back as string.
 
-            if len(resLst) == iCnt:
+            #number 2 accounts for colnames, colinfo
+            if len(resLst) - 2 == iCnt:
                 arcpy.AddMessage('\t' + surfMsg)
 
-                cursor = arcpy.da.InsertCursor(gdb + os.sep + tbl, surfHrzFlds)
+                tbl = "SurfHrz" + ws[3:]
+                outputTable = os.path.join(gdb, tbl)
 
-                for row in resLst:
-                    cursor.insertRow(row)
+                columnNames = resLst.pop(0)
+                columnInfo = resLst.pop(0)
+
+
+                newTable = CreateNewTable(outputTable, columnNames, columnInfo)
+
+                with arcpy.da.InsertCursor(newTable, columnNames) as cursor:
+
+                    for row in resLst:
+                        cursor.insertRow(row)
+
+                arcpy.conversion.TableToTable(newTable, os.path.join(inDir, gdb), tbl)
 
             else:
                 arcpy.AddWarning('\t' + surfMsg + " but recieved no records or does not match raster count")
@@ -175,7 +176,7 @@ def surfHoriz(keys):
                     wLst.append(ws[3:])
 
         else:
-            arcpy.AddWarning('\tNo surface horizon table returned for ' + ws[3])
+            arcpy.AddWarning('\tNo surface horizon table returned for ' + ws[3:])
             if not ws[3:] in wLst:
                 wLst.append(ws[3:])
 
@@ -214,32 +215,32 @@ def surfTex(keys):
 
     if surfTexLogic:
 
-        #source a tempplate table
-        tTable = os.path.dirname(sys.argv[0]) + os.sep + "template_tables.gdb"  + os.sep + "SurfTex"
-
-        #name the table to create
-        tbl = "SurfTex" + ws[3:]
-
-        #create the table
-        arcpy.management.CreateTable(gdb, tbl , tTable)
-
-        #identify fields for the cursor
-        surfTexFlds = ['cokey', 'comppct_r', 'Texture', 'TextCls', 'ParMatGrp', 'ParMatKind']
-
         #populate the table
         if "Table" in surfTexRes:
 
             # get its value
             resLst = surfTexRes["Table"]  # Data as a list of lists. All values come back as string.
 
-            if len(resLst) == iCnt:
+            #the number 2 accounts for colnames and colinfo
+            if len(resLst) - 2 == iCnt:
 
                 arcpy.AddMessage('\t' + surfTexMsg)
 
-                cursor = arcpy.da.InsertCursor(gdb + os.sep + tbl, surfTexFlds)
+                tbl = "SurfTex" + ws[3:]
+                outputTable = os.path.join(gdb, tbl)
 
-                for row in resLst:
-                    cursor.insertRow(row)
+                columnNames = resLst.pop(0)
+                columnInfo = resLst.pop(0)
+
+                newTable = CreateNewTable(outputTable, columnNames, columnInfo)
+
+                with arcpy.da.InsertCursor(newTable, columnNames) as cursor:
+
+                    for row in resLst:
+                        cursor.insertRow(row)
+
+                arcpy.conversion.TableToTable(newTable, os.path.join(inDir, gdb), tbl)
+
 
             else:
                 arcpy.AddWarning('\t' + surfTexMsg + " but recieved no records or does not match raster count")
@@ -247,7 +248,7 @@ def surfTex(keys):
                     wLst.append(ws[3:])
 
         else:
-            arcpy.AddWarning('\tNo surface texture table returned for ' + ws[3])
+            arcpy.AddWarning('\tNo surface texture table returned for ' + ws[3:])
             if not ws[3:] in wLst:
                 wLst.append(ws[3:])
 
@@ -260,39 +261,44 @@ def surfTex(keys):
 
 def getHull(poly):
 
-    if wsSR.PCSName != "":
-            # AOI layer has a projected coordinate system, so geometry will always have to be projected
+    try:
+
+        if wsSR.PCSName != "":
+                # AOI layer has a projected coordinate system, so geometry will always have to be projected
+                bProjected = True
+
+        elif wsSR.GCS.name != wgs.GCS.name:
+            # AOI must be NAD 1983
             bProjected = True
 
-    elif wsSR.GCS.name != wgs.GCS.name:
-        # AOI must be NAD 1983
-        bProjected = True
+        else:
+            bProjected = False
 
-    else:
-        bProjected = False
+        if bProjected:
+            with arcpy.da.SearchCursor(poly, ["SHAPE@"]) as cur:
+                for rec in cur:
+                    cHullPolygon = rec[0].convexHull()              # simplified geometry
+                    wgsPolygon = cHullPolygon.projectAs(wgs, tm)        # simplified geometry, projected to WGS 1984
+                    #ClipPolygon = rec[0].projectAs(gcs)        # original geometry projected to WGS 1984
+            wkt = wgsPolygon.WKT
 
-    if bProjected:
-        with arcpy.da.SearchCursor(poly, ["SHAPE@"]) as cur:
-            for rec in cur:
-                cHullPolygon = rec[0].convexHull()              # simplified geometry
-                wgsPolygon = cHullPolygon.projectAs(wgs, tm)        # simplified geometry, projected to WGS 1984
-                #ClipPolygon = rec[0].projectAs(gcs)        # original geometry projected to WGS 1984
-        wkt = wgsPolygon.WKT
+        else:
+            #not projected
+            with arcpy.da.SearchCursor(poly, ["SHAPE@"]) as cur:
+                for rec in cur:
+                    cHullPolygon = rec[0].convexHull()                # simplified geometry
+                    clipPolygon = rec[0]                              # original geometry
+            wkt = cHullPolygon.WKT
 
-    else:
-        #not projected
-        with arcpy.da.SearchCursor(poly, ["SHAPE@"]) as cur:
-            for rec in cur:
-                cHullPolygon = rec[0].convexHull()                # simplified geometry
-                clipPolygon = rec[0]                              # original geometry
-        wkt = cHullPolygon.WKT
-
-    wkt = wkt.replace("MULTIPOLYGON (", "")[:-1]
+        wkt = wkt.replace("MULTIPOLYGON (", "")[:-1]
 
 
-    return wkt
+        return True,wkt
 
-
+    except:
+        errorMsg()
+        msg = 'Error building convex hull'
+        return False, msg
 
 def geoRequest(aoi):
 
@@ -354,13 +360,14 @@ def geoRequest(aoi):
             # get its value
             resLst = qData["Table"]  # Data as a list of lists. All values come back as string
 
-            rows =  arcpy.da.InsertCursor(sdaWGS, ["SHAPE@WKT", "t_mukey"])
+            rows =  arcpy.da.InsertCursor(sdaWGS, ["SHAPE@WKT", "t_mukey", "mukey"])
 
             keyDict = dict()
 
             for e in resLst:
 
                 mukey = e[0]
+                imukey = int(e[0])
                 geog = e[1]
 
                 #arcpy.AddMessage(mukey)
@@ -368,27 +375,19 @@ def geoRequest(aoi):
                 if not mukey in keyDict:
                     keyDict[mukey] = int(mukey)
 
-                value = geog, mukey
+                value = geog, mukey, imukey
                 rows.insertRow(value)
 
             del rows
             arcpy.AddMessage('\tReceived SSURGO polygons information successfully.')
 
-            #arcpy.management.CalculateField(sdaWGS, "mukey", "int(!t_mukey!)", "PYTHON_9.3")
-            with arcpy.da.UpdateCursor(sdaWGS, ["t_mukey", "mukey"]) as cursor:
-                for row in cursor:
-                    iVal = keyDict.get(row[0])
-                    row[1] = iVal
-                    cursor.updateRow(row)
 
-
-
-            return True, keyDict
+            return True, None
 
         else:
-            Msg = 'Unable to translate feature set into valid geometry'
+            Msg = 'Unable to translate request into valid geometry'
             arcpy.AddMessage(Msg)
-            return False, Msg
+            return False, None
 
     except socket.timeout as e:
         Msg = 'Soil Data Access timeout error'
@@ -449,7 +448,7 @@ def muaggat(keys):
      FROM #main
      DROP TABLE #main"""
 
-    #arcpy.AddMessage(muAgQry)
+    #arcpy.AddMessage('\n\n' + muAgQry)
 
     #send the query to SDA
     muAgLogic, muAgMsg, muAgRes = tabRequest(muAgQry, "Muaggat")
@@ -457,18 +456,9 @@ def muaggat(keys):
 
     if muAgLogic:
 
-        #source a tempplate table
-        tTable = os.path.dirname(sys.argv[0]) + os.sep + "template_tables.gdb"  + os.sep + "muaggat"
-
         #name the table to create and create return table path
         tbl ="muaggat"
         jTbl = os.path.join(gdb, tbl)
-
-        #create the table
-        arcpy.management.CreateTable(gdb, tbl ,tTable)
-
-        #identify fields for the cursor
-        muAgFlds = ['MUKEY', 'MUsymbol', 'MUname', 'WTDepAprJun', 'FloodFreq', 'PondFreq', 'DrainCls', 'DrainClsWet', 'HydroGrp', 'Hydric', 'NCCPIcs', 'NCCPIsg']
 
         #populate the table
         if "Table" in muAgRes:
@@ -476,15 +466,22 @@ def muaggat(keys):
             # get its value
             resLst = muAgRes["Table"]  # Data as a list of lists. All values come back as string.
 
-            if len(resLst) == iCnt:
+            #the nmumber 2 account for colnames, colinfo
+            if len(resLst) - 2 == iCnt:
 
                 arcpy.AddMessage('\t' + muAgMsg)
 
-                cursor = arcpy.da.InsertCursor(gdb + os.sep + tbl, muAgFlds)
+                columnNames = resLst.pop(0)
+                columnInfo = resLst.pop(0)
 
-                for row in resLst:
+                newTable = CreateNewTable(jTbl, columnNames, columnInfo)
 
-                    cursor.insertRow(row)
+                with arcpy.da.InsertCursor(newTable, columnNames) as cursor:
+
+                    for row in resLst:
+                        cursor.insertRow(row)
+
+                arcpy.conversion.TableToTable(newTable, os.path.join(inDir, gdb), tbl)
 
                 return True, jTbl
 
@@ -495,7 +492,7 @@ def muaggat(keys):
                 return False, None
 
         else:
-            arcpy.AddWarning('\tNo muaggat table returned for ' + ws[3])
+            arcpy.AddWarning('\tNo muaggat table returned for ' + ws[3:])
             if not ws[3:] in wLst:
                 wLst.append(ws[3:])
             return False, None
@@ -666,18 +663,15 @@ def rootZnDep(keys):
 
     if rtZnDepLogic:
 
-        #source a tempplate table
-        tTable = os.path.dirname(sys.argv[0]) + os.sep + "template_tables.gdb"  + os.sep + "rtZnDep"
-
         #name the table to create and return path
         tbl = "rtZnDep"
         jTbl = os.path.join(gdb, tbl)
 
         #create the table
-        arcpy.management.CreateTable(gdb, tbl , tTable)
+        #arcpy.management.CreateTable(gdb, tbl , tTable)
 
         #identify fields for the cursor
-        rtZnDepFlds = ['MUKEY','RootZnDepth']
+        #rtZnDepFlds = ['MUKEY','RootZnDepth']
 
         #populate the table
         if "Table" in rtZnDepRes:
@@ -685,25 +679,32 @@ def rootZnDep(keys):
             # get its value
             resLst = rtZnDepRes["Table"]  # Data as a list of lists. All values come back as string.
 
-            if len(resLst) == iCnt:
+            # number 2 account for colname and colinfo
+            if len(resLst) - 2 == iCnt:
 
                 arcpy.AddMessage('\t' + rtZnDepMsg)
 
-                cursor = arcpy.da.InsertCursor(gdb + os.sep + tbl, rtZnDepFlds)
+                columnNames = resLst.pop(0)
+                columnInfo = resLst.pop(0)
 
-                #cList gets only mukey and root zone depth value
-                for row in resLst:
-                    cList = [row[0], row[3]]
-                    cursor.insertRow(cList)
+                newTable = CreateNewTable(jTbl, columnNames, columnInfo)
+
+                with arcpy.da.InsertCursor(newTable, columnNames) as cursor:
+
+                    for row in resLst:
+                        cursor.insertRow(row)
+
+                arcpy.conversion.TableToTable(newTable, os.path.join(inDir, gdb), tbl)
 
                 return True, jTbl
+
             else:
                 arcpy.AddWarning('\t' + rtZnDepMsg + " but recieved no records or does not match raster count")
                 if not ws[3:] in wLst:
                     wLst.append(ws[3:])
                 return False, None
         else:
-            arcpy.AddWarning('\tNo root zone depth table returned for ' + ws[3])
+            arcpy.AddWarning('\tNo root zone depth table returned for ' + ws[3:])
             if not ws[3:] in wLst:
                 wLst.append(ws[3:])
             return False, None
@@ -925,18 +926,9 @@ def soc(keys):
 
     if socLogic:
 
-        #source a tempplate table
-        tTable = os.path.dirname(sys.argv[0]) + os.sep + "template_tables.gdb"  + os.sep + "soc"
-
         #name the table to create and return path
         tbl = "soc"
         jTbl = os.path.join(gdb, tbl)
-
-        #create the table
-        arcpy.management.CreateTable(gdb, tbl , tTable)
-
-        #identify fields for the cursor
-        socFlds = ['MUKEY', 'soc0_20', 'soc20_50', 'soc50_100']
 
         #populate the table
         if "Table" in socRes:
@@ -944,14 +936,22 @@ def soc(keys):
             # get its value
             resLst = socRes["Table"]  # Data as a list of lists. All values come back as string.
 
-            if len(resLst) == iCnt:
+            #number 2 accounts for colname, colinfo
+            if len(resLst) - 2 == iCnt:
 
                 arcpy.AddMessage('\t' + socMsg)
 
-                cursor = arcpy.da.InsertCursor(gdb + os.sep + tbl, socFlds)
+                columnNames = resLst.pop(0)
+                columnInfo = resLst.pop(0)
 
-                for row in resLst:
-                    cursor.insertRow(row)
+                newTable = CreateNewTable(jTbl, columnNames, columnInfo)
+
+                with arcpy.da.InsertCursor(newTable, columnNames) as cursor:
+
+                    for row in resLst:
+                        cursor.insertRow(row)
+
+                arcpy.conversion.TableToTable(newTable, os.path.join(inDir, gdb), tbl)
 
                 return True, jTbl
             else:
@@ -960,7 +960,7 @@ def soc(keys):
                     wLst.append(ws[3:])
                 return False, None
         else:
-            arcpy.AddWarning('\tNo soc depth table returned for ' + ws[3])
+            arcpy.AddWarning('\tNo soc depth table returned for ' + ws[3:])
             if not ws[3:] in wLst:
                 wLst.append(ws[3:])
             return False, None
@@ -1064,18 +1064,9 @@ def potWet(keys):
 
     if potWetLogic:
 
-        #source a tempplate table
-        tTable = os.path.dirname(sys.argv[0]) + os.sep + "template_tables.gdb"  + os.sep + "potwet"
-
         #name the table to create and return path
         tbl = "potwet"
         jTbl = os.path.join(gdb, tbl)
-
-        #create the table
-        arcpy.management.CreateTable(gdb, tbl , tTable)
-
-        #identify fields for the cursor
-        potWetFlds = ['MUKEY', 'PotWetandSoil']
 
         #populate the table
         if "Table" in potWetRes:
@@ -1083,19 +1074,22 @@ def potWet(keys):
             # get its value
             resLst = potWetRes["Table"]  # Data as a list of lists. All values come back as string.
 
-            if len(resLst) == iCnt:
+            #number 2 accounts for colnames, colinfo
+            if len(resLst) - 2 == iCnt:
 
                 arcpy.AddMessage('\t' + potWetMsg)
 
-                cursor = arcpy.da.InsertCursor(gdb + os.sep + tbl, potWetFlds)
+                columnNames = resLst.pop(0)
+                columnInfo = resLst.pop(0)
 
-                #original query from jason contained hydric rating as the third column
-                #i don't think wee want it
+                newTable = CreateNewTable(jTbl, columnNames, columnInfo)
 
-                for row in resLst:
+                with arcpy.da.InsertCursor(newTable, columnNames) as cursor:
 
-                    cList = [row[0], row[1]]
-                    cursor.insertRow(cList)
+                    for row in resLst:
+                        cursor.insertRow(row)
+
+                arcpy.conversion.TableToTable(newTable, os.path.join(inDir, gdb), tbl)
 
                 return True, jTbl
 
@@ -1106,7 +1100,7 @@ def potWet(keys):
                 return False, None
 
         else:
-            arcpy.AddWarning('\tNo potential wetland table returned for ' + ws[3])
+            arcpy.AddWarning('\tNo potential wetland table returned for ' + ws[3:])
             if not ws[3:] in wLst:
                 wLst.append(ws[3:])
             return False, None
@@ -1116,9 +1110,6 @@ def potWet(keys):
         if not ws[3:] in wLst:
             wLst.append(ws[3:])
         return False, None
-
-
-
 
 
 
@@ -1215,18 +1206,9 @@ def ksat50150(keys):
 
     if ksat50150Logic:
 
-        #source a tempplate table
-        tTable = os.path.dirname(sys.argv[0]) + os.sep + "template_tables.gdb"  + os.sep + "KSat50_150"
-
         #name the table to create
         tbl = "KSat50_150"
         jTbl = os.path.join(gdb, tbl)
-
-        #create the table
-        arcpy.management.CreateTable(gdb, tbl , tTable)
-
-        #identify fields for the cursor
-        ksat50150Flds = ['MUKEY', 'KSat50_150']
 
         #populate the table
         if "Table" in ksat50150Res:
@@ -1234,16 +1216,23 @@ def ksat50150(keys):
             # get its value
             resLst = ksat50150Res["Table"]  # Data as a list of lists. All values come back as string.
 
-            if len(resLst) == iCnt:
+            #number 2 accounts for colnames, colinfo
+            if len(resLst) - 2 == iCnt:
 
                 arcpy.AddMessage('\t' + ksat50150Msg)
 
-                cursor = arcpy.da.InsertCursor(gdb + os.sep + tbl, ksat50150Flds)
+                columnNames = resLst.pop(0)
+                columnInfo = resLst.pop(0)
 
-                for row in resLst:
-                    cList = [row[0], row[2]]
-                    cursor.insertRow(cList)
-##
+                newTable = CreateNewTable(jTbl, columnNames, columnInfo)
+
+                with arcpy.da.InsertCursor(newTable, columnNames) as cursor:
+
+                    for row in resLst:
+                        cursor.insertRow(row)
+
+                arcpy.conversion.TableToTable(newTable, os.path.join(inDir, gdb), tbl)
+
                 return True, jTbl
 
             else:
@@ -1252,7 +1241,7 @@ def ksat50150(keys):
                     wLst.append(ws[3:])
                 return False, None
         else:
-            arcpy.AddWarning('\tNo KSat 50 - 150 depth table returned for ' + ws[3])
+            arcpy.AddWarning('\tNo KSat 50 - 150 depth table returned for ' + ws[3:])
             if not ws[3:] in wLst:
                 wLst.append(ws[3:])
             return False, None
@@ -1548,18 +1537,9 @@ def rootZnAwsDrt(keys):
 
     if rtZnAwsDrtLogic:
 
-        #source a tempplate table
-        tTable = os.path.dirname(sys.argv[0]) + os.sep + "template_tables.gdb"  + os.sep + "rtZnAwsDrt"
-
         #name the table to create and return path
         tbl = "rtZnAwsDrt"
         jTbl = os.path.join(gdb, tbl)
-
-        #create the table
-        arcpy.management.CreateTable(gdb, tbl , tTable)
-
-        #identify fields for the cursor
-        rtZnAwsDrtFlds = ['MUKEY', 'RootZnAWS', 'Droughty']
 
         #populate the table
         if "Table" in rtZnAwsDrtRes:
@@ -1567,14 +1547,22 @@ def rootZnAwsDrt(keys):
             # get its value
             resLst = rtZnAwsDrtRes["Table"]  # Data as a list of lists. All values come back as string.
 
-            if len(resLst) == iCnt:
+            #number 2 accounts for colnames, colinfo
+            if len(resLst) - 2 == iCnt:
 
                 arcpy.AddMessage('\t' + rtZnAwsDrtMsg)
 
-                cursor = arcpy.da.InsertCursor(gdb + os.sep + tbl, rtZnAwsDrtFlds)
+                columnNames = resLst.pop(0)
+                columnInfo = resLst.pop(0)
 
-                for row in resLst:
-                    cursor.insertRow(row)
+                newTable = CreateNewTable(jTbl, columnNames, columnInfo)
+
+                with arcpy.da.InsertCursor(newTable, columnNames) as cursor:
+
+                    for row in resLst:
+                        cursor.insertRow(row)
+
+                arcpy.conversion.TableToTable(newTable, os.path.join(inDir, gdb), tbl)
 
                 return True, jTbl
 
@@ -1584,7 +1572,7 @@ def rootZnAwsDrt(keys):
                     wLst.append(ws[3:])
                 return False, None
         else:
-            arcpy.AddWarning('\tNo root zone AWS-Drought table returned for ' + ws[3])
+            arcpy.AddWarning('\tNo root zone AWS-Drought table returned for ' + ws[3:])
             if not ws[3:] in wLst:
                 wLst.append(ws[3:])
             return False, None
@@ -1672,18 +1660,9 @@ def om(keys):
 
     if omLogic:
 
-        #source a tempplate table
-        tTable = os.path.dirname(sys.argv[0]) + os.sep + "template_tables.gdb"  + os.sep + "om"
-
         #name the table to create and return path
         tbl = "om"
         jTbl = os.path.join(gdb, tbl)
-
-        #create the table
-        arcpy.management.CreateTable(gdb, tbl , tTable)
-
-        #identify fields for the cursor
-        omFlds = ['MUKEY', 'OM0_100']
 
         #populate the table
         if "Table" in omRes:
@@ -1691,17 +1670,23 @@ def om(keys):
             # get its value
             resLst = omRes["Table"]  # Data as a list of lists. All values come back as string.
 
-            if len(resLst) == iCnt:
+            #number 2 accounts for colnames, colinfo
+
+            if len(resLst) - 2 == iCnt:
 
                 arcpy.AddMessage('\t' + omMsg)
 
-                cursor = arcpy.da.InsertCursor(gdb + os.sep + tbl, omFlds)
+                columnNames = resLst.pop(0)
+                columnInfo = resLst.pop(0)
 
-                #query returns unnecessary fields, get only the relevent
-                for row in resLst:
+                newTable = CreateNewTable(jTbl, columnNames, columnInfo)
 
-                    cList = [row[3], row[4]]
-                    cursor.insertRow(cList)
+                with arcpy.da.InsertCursor(newTable, columnNames) as cursor:
+
+                    for row in resLst:
+                        cursor.insertRow(row)
+
+                arcpy.conversion.TableToTable(newTable, os.path.join(inDir, gdb), tbl)
 
                 return True, jTbl
 
@@ -1711,7 +1696,7 @@ def om(keys):
                     wLst.append(ws[3:])
                 return False, None
         else:
-            arcpy.AddWarning('\tNo OM table returned for ' + ws[3])
+            arcpy.AddWarning('\tNo OM table returned for ' + ws[3:])
             if not ws[3:] in wLst:
                 wLst.append(ws[3:])
             return False, None
@@ -1839,18 +1824,9 @@ def coarseFrag(keys):
 
     if coarseFLogic:
 
-        #source a tempplate table
-        tTable = os.path.dirname(sys.argv[0]) + os.sep + "template_tables.gdb"  + os.sep + "coarse_frag"
-
         #name the table to create
         tbl = "coarse_frag"
         jTbl = os.path.join(gdb, tbl)
-
-        #create the table
-        arcpy.management.CreateTable(gdb, tbl , tTable)
-
-        #identify fields for the cursor
-        coarseFFlds = ['MUKEY', 'Coarse50_150']
 
         #populate the table
         if "Table" in coarseFRes:
@@ -1858,19 +1834,23 @@ def coarseFrag(keys):
             # get its value
             resLst = coarseFRes["Table"]  # Data as a list of lists. All values come back as string.
 
-            if len(resLst) == iCnt:
+            #number 2 accounts for colnames, colinfo
+            if len(resLst) - 2 == iCnt:
 
                 arcpy.AddMessage('\t' + coarseFMsg)
 
-                cursor = arcpy.da.InsertCursor(gdb + os.sep + tbl, coarseFFlds)
+                columnNames = resLst.pop(0)
+                columnInfo = resLst.pop(0)
 
-                #query returns muname, which we don't want.
-                #create a list and grab the 1st and 3rd items
+                newTable = CreateNewTable(jTbl, columnNames, columnInfo)
 
-                for row in resLst:
+                with arcpy.da.InsertCursor(newTable, columnNames) as cursor:
 
-                    cList = [row[0], row[2]]
-                    cursor.insertRow(cList)
+                    for row in resLst:
+                        cursor.insertRow(row)
+
+                arcpy.conversion.TableToTable(newTable, os.path.join(inDir, gdb), tbl)
+
                 return True, jTbl
 
             else:
@@ -1879,7 +1859,7 @@ def coarseFrag(keys):
                     wLst.append(ws[3:])
                 return False, None
         else:
-            arcpy.AddWarning('\tNo coarse frag table returned for ' + ws[3])
+            arcpy.AddWarning('\tNo coarse frag table returned for ' + ws[3:])
             if not ws[3:] in wLst:
                 wLst.append(ws[3:])
             return False, None
@@ -2178,18 +2158,9 @@ def aws(keys):
 
     if awsLogic:
 
-        #source a tempplate table
-        tTable = os.path.dirname(sys.argv[0]) + os.sep + "template_tables.gdb"  + os.sep + "aws"
-
         #name the table to create and return path
         tbl = "aws"
         jTbl = os.path.join(gdb, tbl)
-
-        #create the table
-        arcpy.management.CreateTable(gdb, tbl , tTable)
-
-        #identify fields for the cursor
-        awsFlds = ['mukey', 'aws0_20', 'aws20_50', 'aws50_100']
 
         #populate the table
         if "Table" in awsRes:
@@ -2197,14 +2168,22 @@ def aws(keys):
             # get its value
             resLst = awsRes["Table"]  # Data as a list of lists. All values come back as string.
 
-            if len(resLst) == iCnt:
+            #number 2 accounts for colname, colinfo
+            if len(resLst) - 2 == iCnt:
 
                 arcpy.AddMessage('\t' + awsMsg)
 
-                cursor = arcpy.da.InsertCursor(gdb + os.sep + tbl, awsFlds)
+                columnNames = resLst.pop(0)
+                columnInfo = resLst.pop(0)
 
-                for row in resLst:
-                    cursor.insertRow(row)
+                newTable = CreateNewTable(jTbl, columnNames, columnInfo)
+
+                with arcpy.da.InsertCursor(newTable, columnNames) as cursor:
+
+                    for row in resLst:
+                        cursor.insertRow(row)
+
+                arcpy.conversion.TableToTable(newTable, os.path.join(inDir, gdb), tbl)
 
                 return True, jTbl
 
@@ -2215,7 +2194,7 @@ def aws(keys):
                 return False, None
 
         else:
-            arcpy.AddWarning('\tNo AWS table returned for ' + ws[3])
+            arcpy.AddWarning('\tNo AWS table returned for ' + ws[3:])
             if not ws[3:] in wLst:
                 wLst.append(ws[3:])
             return False, None
@@ -2229,27 +2208,87 @@ def aws(keys):
 
 def buildACPF(dataTbl, acpfTbl):
 
-    jFlds = [x.name for x in arcpy.Describe(dataTbl).fields if not x.name in ["OBJECTID", "MUKEY", "mukey"]]
+    #the SDA queries often return columns we don't want
+    jFlds = [x.name for x in arcpy.Describe(dataTbl).fields if not x.name in ["OBJECTID", "MUKEY", "mukey", "areasymbol", "muname", "musym", "MUSYM", "MUNAME", "hydric_rating"]]
 
     arcpy.management.JoinField(acpfTbl, "MUKEY", dataTbl, "MUKEY", jFlds)
 
 def soilProfileTbl(keys):
 
-#had to make this a function bc the other functions in main
-#put the gdb in transaction mode.  i could have called  arcpy.edit but am not
+    #had to make this a function bc the other functions in main
+    #put the gdb in transaction mode.  i could have called  arcpy.edit but am not
 
     #make the soil profile table
-    arcpy.management.CreateTable(gdb, profTbl)
-    arcpy.management.AddField(os.path.join(gdb,profTbl), "MUKEY", "TEXT", None, None, "30")
+    path = os.path.join(inDir, gdb)
+    arcpy.management.CreateTable(path, profTbl)
+    arcpy.management.AddField(os.path.join(path,profTbl), "MUKEY", "TEXT", None, None, "30")
 
 
-    cursor = arcpy.da.InsertCursor(gdb + os.sep + profTbl, "MUKEY")
+    cursor = arcpy.da.InsertCursor(path + os.sep + profTbl, "MUKEY")
 
     for key in keys:
         cVal = [key]
         cursor.insertRow(cVal)
 
+def CreateNewTable(newTable, columnNames, columnInfo):
+    # Create new table. Start with in-memory and then export to geodatabase table
+    #
+    # ColumnNames and columnInfo come from the Attribute query JSON string
+    # MUKEY would normally be included in the list, but it should already exist in the output featureclass
+    #
+    try:
+        # Dictionary: SQL Server to FGDB
+        dType = dict()
 
+        dType["int"] = "long"
+        dType["smallint"] = "short"
+        dType["bit"] = "short"
+        dType["varbinary"] = "blob"
+        dType["nvarchar"] = "text"
+        dType["varchar"] = "text"
+        dType["char"] = "text"
+        dType["datetime"] = "date"
+        dType["datetime2"] = "date"
+        dType["smalldatetime"] = "date"
+        dType["decimal"] = "double"
+        dType["numeric"] = "double"
+        dType["float"] ="double"
+
+        # numeric type conversion depends upon the precision and scale
+        dType["numeric"] = "float"  # 4 bytes
+        dType["real"] = "double" # 8 bytes
+
+        # Iterate through list of field names and add them to the output table
+        i = 0
+
+        # ColumnInfo contains:
+        # ColumnOrdinal, ColumnSize, NumericPrecision, NumericScale, ProviderType, IsLong, ProviderSpecificDataType, DataTypeName
+        #PrintMsg(" \nFieldName, Length, Precision, Scale, Type", 1)
+
+        joinFields = list()
+        outputTbl = os.path.join("IN_MEMORY", os.path.basename(newTable))
+        arcpy.CreateTable_management(os.path.dirname(outputTbl), os.path.basename(outputTbl))
+
+        for i, fldName in enumerate(columnNames):
+            vals = columnInfo[i].split(",")
+            length = int(vals[1].split("=")[1])
+            precision = int(vals[2].split("=")[1])
+            scale = int(vals[3].split("=")[1])
+            dataType = dType[vals[4].lower().split("=")[1]]
+
+            if fldName.lower().endswith("key"):
+                # Per SSURGO standards, key fields should be string. They come from Soil Data Access as long integer.
+                dataType = 'text'
+                length = 30
+
+            arcpy.AddField_management(outputTbl, fldName, dataType, precision, scale, length)
+
+
+        return outputTbl
+
+    except:
+        errorMsg()
+        return False
 
 #===============================================================================
 
@@ -2261,29 +2300,39 @@ env.overwriteOutput = True
 day = str(datetime.date.today()).replace("-", "_")
 
 inDir = arcpy.GetParameterAsText(0)
-dBool = arcpy.GetParameterAsText(1)
+pGDBs = arcpy.GetParameterAsText(1)
+dBool = arcpy.GetParameterAsText(2)
 wgs = arcpy.SpatialReference(4326)
 
 wLst = list()
+usrGDBs = pGDBs.split(";")
 
-env.workspace = inDir
-
-fGDBs = arcpy.ListWorkspaces(None, "FileGDB")
 
 #separate tool messages from stock msgs
 arcpy.AddMessage('\n\n')
 
 try:
 
-    for gdb in fGDBs:
-        env.workspace = gdb
+    for gdb in usrGDBs:
+        env.workspace = os.path.join(inDir, gdb)
         bufL = arcpy.ListFeatureClasses("buf*", "Polygon")
-        if len(bufL) <> 1:
-            arcpy.AddWarning('\nUnable to resolve buffered watershed in ' + os.path.basename(gdb)[:-4] + '. None found or ambiguity in feature class names\n')
+        if len(bufL) == 1:
 
-        else:
             ws = bufL[0]
             arcpy.AddMessage('Processing watershed buffer ' + ws[3:])
+
+            try:
+
+                snapR = arcpy.ListRasters("ws*", None)[-1]
+                env.snapRaster = snapR
+                arcpy.AddMessage("Snap Raster = " + env.snapRaster)
+
+            except:
+
+                arcpy.AddWarning("No snap raster available for "  + ws[3:])
+
+
+
             profTbl = 'SoilProfile' + ws[3:]
 
             wsSR = arcpy.Describe(ws).spatialReference
@@ -2320,133 +2369,151 @@ try:
             sdaSR = arcpy.SpatialReference(4326)
 
             # get generalized coordinates
-            theHull = getHull(ws)
+            hullLogic, theHull = getHull(ws)
 
-            #feed generalized coordinates to SDA, WGS84 polys are built
-            gr, grKeys = geoRequest(theHull)
+            if hullLogic:
+
+                #feed generalized coordinates to SDA, WGS84 polys are built
+                grLogic, grVal = geoRequest(theHull)
+
+                if grLogic:
+
+                    #if necessary, project the features returned from SDA to input watershed
+                    if tm != "":
+                        arcpy.AddMessage("\tReprojecting SDA features to match " + os.path.basename(gdb)[:-4] + " " + wsSR.PCSName + ":" + wsSR.GCS.name)
+                        arcpy.management.Project(sdaWGS, prjFeats, wsSR, tm)
+
+                        #clip the projeted, sda features to input watesrshed
+                        arcpy.analysis.Clip(prjFeats, ws, finalClip)
+
+                    else:
+
+                        #clip the projeted, sda features to input watesrshed
+                        arcpy.analysis.Clip(sdaWGS, ws, finalClip)
+
+                    #get list of mukeys from clipped poly (not convex hull returned from geoRequest)
+                    keys = list()
+                    with arcpy.da.SearchCursor(finalClip, "t_mukey") as rows:
+                        for row in rows:
+                            val = str(row[0])
+                            if not val in keys:
+                                keys.append(val)
+
+                    keys.sort()
 
 
+                    #converted the projected, clipped ssurgo features to a raster
+                    arcpy.conversion.PolygonToRaster(finalClip, "mukey", outRaster, "MAXIMUM_COMBINED_AREA", None, "10")
 
-            #if necessary, project the features returned from SDA to input watershed
-            if tm != "":
-                arcpy.AddMessage("\tReprojecting SDA features to match " + os.path.basename(gdb)[:-4] + " " + wsSR.PCSName + ":" + wsSR.GCS.name)
-                arcpy.management.Project(sdaWGS, prjFeats, wsSR, tm)
+                    #add a text, mukey field
+                    arcpy.management.AddField(outRaster, "mukey", "TEXT", None, None, "30")
 
-                #clip the projeted, sda features to input watesrshed
-                arcpy.analysis.Clip(prjFeats, ws, finalClip)
+                    #populate the field (insertcursors are usually faster)
+                    arcpy.management.CalculateField(outRaster, "mukey", "!VALUE!", "PYTHON_9.3")
+
+                    #get count of records in raster to ensure same number of records
+                    #are returned from SDA queries
+                    cnt = arcpy.management.GetCount(outRaster)
+                    iCnt = int(cnt.getOutput(0))
+
+
+                    surfHoriz(keys)
+                    surfTex(keys)
+
+                    #these queries populate the gSSURGO vat, in order
+                    #if the logical is False on these, the return message comes from w/ in the function
+                    muAggtLogic, tbl = muaggat(keys)
+                    if muAggtLogic:
+                        dataTbl = os.path.join(inDir,tbl)
+                        buildACPF(dataTbl, outRaster)
+                    del dataTbl, tbl
+
+                    rootZnDepLogic, tbl = rootZnDep(keys)
+                    if rootZnDepLogic:
+                        dataTbl = os.path.join(inDir,tbl)
+                        buildACPF(dataTbl, outRaster)
+                    del dataTbl, tbl
+
+
+                    rootZnAwsDrtLogic, tbl = rootZnAwsDrt(keys)
+                    if rootZnAwsDrtLogic:
+                        dataTbl = os.path.join(inDir,tbl)
+                        buildACPF(dataTbl, outRaster)
+                    del dataTbl, tbl
+
+                    potWetLogic, tbl = potWet(keys)
+                    if potWetLogic:
+                        dataTbl = os.path.join(inDir,tbl)
+                        buildACPF(dataTbl, outRaster)
+                    del dataTbl, tbl
+
+                    #build soil profile table
+                    soilProfileTbl(keys)
+
+
+                    #these queries populate the soil profile table, in order
+                    #if the logical is False on these, the return message comes from w/ in the function
+                    awsLogic, tbl = aws(keys)
+                    if awsLogic:
+                        dataTbl = os.path.join(inDir,tbl)
+                        buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
+                    del dataTbl, tbl
+
+                    socLogic, tbl = soc(keys)
+                    if socLogic:
+                        dataTbl = os.path.join(inDir,tbl)
+                        buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
+                    del dataTbl, tbl
+
+                    omLogic, tbl = om(keys)
+                    if omLogic:
+                        dataTbl = os.path.join(inDir,tbl)
+                        buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
+                    del dataTbl, tbl
+
+                    kSatLogic, tbl = ksat50150(keys)
+                    if kSatLogic:
+                        dataTbl = os.path.join(inDir,tbl)
+                        buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
+                    del dataTbl, tbl
+
+                    coarseLogic, tbl = coarseFrag(keys)
+                    if coarseLogic:
+                        dataTbl = os.path.join(inDir,tbl)
+                        buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
+                    del dataTbl, tbl
+
+
+                    #separate jobs for legibility
+                    arcpy.AddMessage('\n')
+
+                    del keys
+
+                    #delete the queries & polygons??
+                    if dBool == "true":
+                        arcpy.management.Delete(sdaWGS)
+                        arcpy.management.Delete(prjFeats)
+                        arcpy.management.Delete(finalClip)
+
+                        dTbls = ['muaggat', 'rtZnDep', 'rtZnAwsDrt', 'potwet', 'SoilProfile', 'aws', 'soc', 'om', 'KSat50_150', 'coarse_frag']
+
+                        for tbl in arcpy.ListTables():
+                            if tbl in dTbls:
+                                arcpy.management.Delete(tbl)
+
+                else:
+
+                    arcpy.AddWarning(grVal)
+                    wLst.append(ws[3:])
 
             else:
 
-                #clip the projeted, sda features to input watesrshed
-                arcpy.analysis.Clip(sdaWGS, ws, finalClip)
+                arcpy.AddWarning(theHull)
+                wLst.append(ws[3:])
 
-            #get list of mukeys from clipped poly (not convex hull returned from geoRequest)
-            keys = list()
-            with arcpy.da.SearchCursor(finalClip, "t_mukey") as rows:
-                for row in rows:
-                    val = str(row[0])
-                    if not val in keys:
-                        keys.append(val)
+        else:
 
-            keys.sort()
-
-
-            #converted the projected, clipped ssurgo features to a raster
-            arcpy.conversion.PolygonToRaster(finalClip, "mukey", outRaster, "MAXIMUM_COMBINED_AREA", None, "10")
-            #arcpy.conversion.FeatureToRaster(finalClip, "mukey", outRaster, "10")
-
-            #add a text, mukey field
-            arcpy.management.AddField(outRaster, "mukey", "TEXT", None, None, "30")
-
-            #populate the field (insertcursors are usually faster)
-            arcpy.management.CalculateField(outRaster, "mukey", "!VALUE!", "PYTHON_9.3")
-
-            #get count of records in raster to ensure same number of records
-            #are returned from SDA queries
-            cnt = arcpy.management.GetCount(outRaster)
-            iCnt = int(cnt.getOutput(0))
-
-
-            surfHoriz(keys)
-            surfTex(keys)
-
-            #these queries populate the gSSURGO vat, in order
-            muAggtLogic, tbl = muaggat(keys)
-            if muAggtLogic:
-                buildACPF(tbl, outRaster)
-            del tbl
-
-
-            rootZnDepLogic, tbl = rootZnDep(keys)
-            if rootZnDepLogic:
-                buildACPF(tbl, outRaster)
-            del tbl
-
-
-            rootZnAwsDrtLogic, tbl = rootZnAwsDrt(keys)
-            if rootZnAwsDrtLogic:
-                buildACPF(tbl, outRaster)
-            del tbl
-
-            potWetLogic, tbl = potWet(keys)
-            if potWetLogic:
-                buildACPF(tbl, outRaster)
-            del tbl
-
-            #build soil profile table
-            soilProfileTbl(keys)
-
-
-            #these queries populate the soil profile table, in order
-
-            awsLogic, tbl = aws(keys)
-            if awsLogic:
-                buildACPF(tbl, os.path.join(gdb, profTbl))
-            del tbl
-
-            socLogic, tbl = soc(keys)
-            if socLogic:
-                buildACPF(tbl, os.path.join(gdb, profTbl))
-            del tbl
-
-
-            omLogic, tbl = om(keys)
-            if omLogic:
-                buildACPF(tbl, os.path.join(gdb, profTbl))
-            del tbl
-
-            kSatLogic, tbl = ksat50150(keys)
-            if kSatLogic:
-                buildACPF(tbl, os.path.join(gdb, profTbl))
-
-
-            coarseLogic, tbl = coarseFrag(keys)
-            if coarseLogic:
-                buildACPF(tbl, os.path.join(gdb, profTbl))
-            del tbl
-
-
-
-
-
-            #separate jobs for legibility
-            arcpy.AddMessage('\n')
-
-            del keys
-
-            if dBool == "true":
-                arcpy.management.Delete(sdaWGS)
-                arcpy.management.Delete(prjFeats)
-                arcpy.management.Delete(finalClip)
-
-                dTbls = ['muaggat', 'rtZnDep', 'rtZnAwsDrt', 'potwet', 'SoilProfile', 'aws', 'soc', 'om', 'KSat50_150', 'coarse_frag']
-
-                for tbl in arcpy.ListTables():
-                    if tbl in dTbls:
-                        arcpy.management.Delete(tbl)
-
-
-
+            arcpy.AddWarning('\nUnable to resolve buffered watershed in ' + os.path.basename(gdb)[:-4] + '. None found or ambiguity in feature class names\n')
 
     if len(wLst)<>0:
         arcpy.AddWarning('The following watershed(s) did not execute properly:')
