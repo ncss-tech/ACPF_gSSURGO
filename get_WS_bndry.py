@@ -2426,26 +2426,26 @@ try:
                     if muAggtLogic:
                         dataTbl = os.path.join(inDir,tbl)
                         buildACPF(dataTbl, outRaster)
-                    del dataTbl, tbl
+                        del dataTbl, tbl
 
                     rootZnDepLogic, tbl = rootZnDep(keys)
                     if rootZnDepLogic:
                         dataTbl = os.path.join(inDir,tbl)
                         buildACPF(dataTbl, outRaster)
-                    del dataTbl, tbl
+                        del dataTbl, tbl
 
 
                     rootZnAwsDrtLogic, tbl = rootZnAwsDrt(keys)
                     if rootZnAwsDrtLogic:
                         dataTbl = os.path.join(inDir,tbl)
                         buildACPF(dataTbl, outRaster)
-                    del dataTbl, tbl
+                        del dataTbl, tbl
 
                     potWetLogic, tbl = potWet(keys)
                     if potWetLogic:
                         dataTbl = os.path.join(inDir,tbl)
                         buildACPF(dataTbl, outRaster)
-                    del dataTbl, tbl
+                        del dataTbl, tbl
 
                     #build soil profile table
                     soilProfileTbl(keys)
@@ -2457,31 +2457,31 @@ try:
                     if awsLogic:
                         dataTbl = os.path.join(inDir,tbl)
                         buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
-                    del dataTbl, tbl
+                        del dataTbl, tbl
 
                     socLogic, tbl = soc(keys)
                     if socLogic:
                         dataTbl = os.path.join(inDir,tbl)
                         buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
-                    del dataTbl, tbl
+                        del dataTbl, tbl
 
                     omLogic, tbl = om(keys)
                     if omLogic:
                         dataTbl = os.path.join(inDir,tbl)
                         buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
-                    del dataTbl, tbl
+                        del dataTbl, tbl
 
                     kSatLogic, tbl = ksat50150(keys)
                     if kSatLogic:
                         dataTbl = os.path.join(inDir,tbl)
                         buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
-                    del dataTbl, tbl
+                        del dataTbl, tbl
 
                     coarseLogic, tbl = coarseFrag(keys)
                     if coarseLogic:
                         dataTbl = os.path.join(inDir,tbl)
                         buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
-                    del dataTbl, tbl
+                        del dataTbl, tbl
 
 
                     #separate jobs for legibility
