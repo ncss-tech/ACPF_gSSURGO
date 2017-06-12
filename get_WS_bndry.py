@@ -973,94 +973,97 @@ def soc(keys):
 def potWet(keys):
 
     potWetQry = """SELECT
-         areasymbol,
-         musym,
-         muname,
-         mu.mukey/1  AS mukey,
-         (SELECT TOP 1 COUNT_BIG(*)
-         FROM mapunit AS mu1
-         INNER JOIN component ON component.mukey=mu1.mukey AND mu1.mukey = mu.mukey) AS comp_count,
-         (SELECT TOP 1 COUNT_BIG(*)
-         FROM mapunit AS mu2
-         INNER JOIN component ON component.mukey=mu2.mukey AND mu2 .mukey = mu.mukey
-         AND majcompflag = 'Yes') AS count_maj_comp,
-         (SELECT TOP 1 COUNT_BIG(*)
-         FROM mapunit AS mu3
-         INNER JOIN component ON component.mukey=mu3.mukey AND mu3.mukey = mu.mukey
-         AND hydricrating = 'Yes' ) AS all_hydric,
-         (SELECT TOP 1 COUNT_BIG(*)
-         FROM mapunit AS mu4
-         INNER JOIN component ON component.mukey=mu4.mukey AND mu4.mukey = mu.mukey
-         AND majcompflag = 'Yes' AND hydricrating = 'Yes') AS maj_hydric,
-         (SELECT TOP 1 COUNT_BIG(*)
-         FROM mapunit AS mu5
-         INNER JOIN component ON component.mukey=mu5.mukey AND mu5.mukey = mu.mukey
-         AND majcompflag = 'Yes' AND hydricrating != 'Yes') AS maj_not_hydric,
-          (SELECT TOP 1 COUNT_BIG(*)
-         FROM mapunit AS mu6
-         INNER JOIN component ON component.mukey=mu6.mukey AND mu6.mukey = mu.mukey
-         AND majcompflag != 'Yes' AND hydricrating  = 'Yes' ) AS hydric_inclusions,
-         (SELECT TOP 1 COUNT_BIG(*)
-         FROM mapunit AS mu7
-         INNER JOIN component ON component.mukey=mu7.mukey AND mu7.mukey = mu.mukey
-         AND hydricrating  != 'Yes') AS all_not_hydric,
-          (SELECT TOP 1 COUNT_BIG(*)
-         FROM mapunit AS mu8
-         INNER JOIN component ON component.mukey=mu8.mukey AND mu8.mukey = mu.mukey
-         AND hydricrating  IS NULL ) AS hydric_null ,
-           (SELECT SUM (comppct_r)
-         FROM mapunit AS mu9
-         INNER JOIN component ON component.mukey=mu9.mukey AND mu9.mukey = mu.mukey
-        AND hydricrating  = 'Yes' ) AS MU_comppct_SUM
+     areasymbol,
+     musym,
+     muname,
+     mu.mukey/1  AS mukey,
+     (SELECT TOP 1 COUNT_BIG(*)
+     FROM mapunit AS mu1
+     INNER JOIN component ON component.mukey=mu1.mukey AND mu1.mukey = mu.mukey) AS comp_count,
+     (SELECT TOP 1 COUNT_BIG(*)
+     FROM mapunit AS mu2
+     INNER JOIN component ON component.mukey=mu2.mukey AND mu2 .mukey = mu.mukey
+     AND majcompflag = 'Yes') AS count_maj_comp,
+     (SELECT TOP 1 COUNT_BIG(*)
+     FROM mapunit AS mu3
+     INNER JOIN component ON component.mukey=mu3.mukey AND mu3.mukey = mu.mukey
+     AND hydricrating = 'Yes' ) AS all_hydric,
+     (SELECT TOP 1 COUNT_BIG(*)
+     FROM mapunit AS mu4
+     INNER JOIN component ON component.mukey=mu4.mukey AND mu4.mukey = mu.mukey
+     AND majcompflag = 'Yes' AND hydricrating = 'Yes') AS maj_hydric,
+     (SELECT TOP 1 COUNT_BIG(*)
+     FROM mapunit AS mu5
+     INNER JOIN component ON component.mukey=mu5.mukey AND mu5.mukey = mu.mukey
+     AND majcompflag = 'Yes' AND hydricrating != 'Yes') AS maj_not_hydric,
+      (SELECT TOP 1 COUNT_BIG(*)
+     FROM mapunit AS mu6
+     INNER JOIN component ON component.mukey=mu6.mukey AND mu6.mukey = mu.mukey
+     AND majcompflag != 'Yes' AND hydricrating  = 'Yes' ) AS hydric_inclusions,
+     (SELECT TOP 1 COUNT_BIG(*)
+     FROM mapunit AS mu7
+     INNER JOIN component ON component.mukey=mu7.mukey AND mu7.mukey = mu.mukey
+     AND hydricrating  != 'Yes') AS all_not_hydric,
+      (SELECT TOP 1 COUNT_BIG(*)
+     FROM mapunit AS mu8
+     INNER JOIN component ON component.mukey=mu8.mukey AND mu8.mukey = mu.mukey
+     AND hydricrating  IS NULL ) AS hydric_null ,
+       (SELECT SUM (comppct_r)
+     FROM mapunit AS mu9
+     INNER JOIN component ON component.mukey=mu9.mukey AND mu9.mukey = mu.mukey
+    AND hydricrating  = 'Yes' ) AS MU_comppct_SUM
 
-         INTO #main_query
-         FROM legend  AS l
-         INNER JOIN  mapunit AS mu ON mu.lkey = l.lkey AND mu.mukey IN (""" + ",".join(map("'{0}'".format, keys)) + """) ---LEFT(l.areasymbol,2) LIKE 'WI'
+     INTO #main_query
+     FROM legend  AS l
+     INNER JOIN mapunit AS mu ON mu.lkey = l.lkey AND mu.mukey IN (""" + ",".join(map("'{0}'".format, keys)) + """)
+     ---Getting the component data and criteria together for the Component Percent.
+     SELECT  #main_query.areasymbol, #main_query.muname, #main_query.mukey, cokey, compname, hydricrating, localphase, drainagecl,
+     CASE
+     WHEN compkind = 'Miscellaneous area' AND compname = 'Water' 			THEN 999
+     WHEN compkind = 'Miscellaneous area' AND compname LIKE '% water' 		THEN 999
+     WHEN compkind = 'Miscellaneous area' AND compname LIKE  '% Ocean' 		THEN 999
+     WHEN compkind = 'Miscellaneous area' AND compname LIKE '% swamp' 		THEN 999
+     WHEN compkind = 'Miscellaneous area' AND muname = 'Water'			 	THEN 999
 
-         ---Getting the component data and criteria together for the Component Percent.
-         SELECT  #main_query.areasymbol, #main_query.muname, #main_query.mukey, cokey, compname, hydricrating, localphase, drainagecl,
-         CASE
-         WHEN compkind = 'Miscellaneous area' AND compname = 'Water' 			THEN 999
-         WHEN compkind = 'Miscellaneous area' AND compname LIKE '% water' 		THEN 999
-         WHEN compkind = 'Miscellaneous area' AND compname LIKE  '% Ocean' 		THEN 999
-         WHEN compkind = 'Miscellaneous area' AND compname LIKE '% swamp' 		THEN 999
-         WHEN compkind = 'Miscellaneous area' AND muname = 'Water'			 	THEN 999
+     WHEN compkind IS NULL AND compname = 'Water' 			THEN 999
+     WHEN compkind IS NULL  AND compname LIKE '% water' 	THEN 999
+     WHEN compkind IS NULL  AND compname LIKE  '% Ocean' 	THEN 999
+     WHEN compkind IS NULL  AND compname LIKE '% swamp' 	THEN 999
+     WHEN compkind IS NULL  AND muname = 'Water' 			THEN 999  END AS Water999,
 
-         WHEN compkind IS NULL AND compname = 'Water' 			THEN 999
-         WHEN compkind IS NULL  AND compname LIKE '% water' 	THEN 999
-         WHEN compkind IS NULL  AND compname LIKE  '% Ocean' 	THEN 999
-         WHEN compkind IS NULL  AND compname LIKE '% swamp' 	THEN 999
-         WHEN compkind IS NULL  AND muname = 'Water' 			THEN 999  END AS Water999,
+     CASE WHEN hydricrating = 'Yes' THEN comppct_r
+     WHEN hydricrating = 'Unranked' AND localphase LIKE '%drained%' 	THEN comppct_r
+     WHEN hydricrating = 'Unranked' AND localphase LIKE '%channeled%' 	THEN comppct_r
+     WHEN hydricrating = 'Unranked' AND localphase LIKE '%protected%' 	THEN comppct_r
+     WHEN hydricrating = 'Unranked' AND localphase LIKE '%ponded%' 		THEN comppct_r
+     WHEN hydricrating = 'Unranked' AND localphase LIKE '%flooded%' 	THEN comppct_r
+     END AS hydric_sum
+     INTO #mu_agg
+     FROM #main_query
+     INNER JOIN component ON component.mukey=#main_query.mukey
 
-         CASE WHEN hydricrating = 'Yes' THEN comppct_r
-         WHEN hydricrating = 'Unranked' AND localphase LIKE '%drained%' 	THEN comppct_r
-         WHEN hydricrating = 'Unranked' AND localphase LIKE '%channeled%' 	THEN comppct_r
-         WHEN hydricrating = 'Unranked' AND localphase LIKE '%protected%' 	THEN comppct_r
-         WHEN hydricrating = 'Unranked' AND localphase LIKE '%ponded%' 		THEN comppct_r
-         WHEN hydricrating = 'Unranked' AND localphase LIKE '%flooded%' 	THEN comppct_r
-         END AS hydric_sum
-         INTO #mu_agg
-         FROM #main_query
-         INNER JOIN component ON component.mukey=#main_query.mukey
+     SELECT  DISTINCT mukey, muname, areasymbol,
+    CASE WHEN Water999 = 999 THEN MAX (999) over(PARTITION BY mukey)  ELSE SUM (hydric_sum) over(PARTITION BY mukey) END AS mu_hydric_sum
+     INTO #mu_agg2
+     FROM #mu_agg
 
-         SELECT DISTINCT mukey, muname, areasymbol, CASE WHEN Water999 = 999 THEN 999 ELSE SUM (hydric_sum) over(PARTITION BY mukey) END AS mu_hydric_sum
-         INTO #mu_agg2
-         FROM #mu_agg
+      SELECT  DISTINCT mukey, muname, areasymbol,
+    mu_hydric_sum
+     INTO #mu_agg3
+     FROM #mu_agg2 WHERE mu_hydric_sum IS NOT NULL
 
 
-        SELECT  ---#main_query.areasymbol,
-        ---#main_query.musym,
-         ---#main_query.muname,
-        #main_query.mukey, #mu_agg2.mu_hydric_sum AS PotWetandSoil,
-        CASE WHEN comp_count = all_not_hydric + hydric_null THEN  'Nonhydric'
-        WHEN comp_count = all_hydric  THEN 'Hydric'
-        WHEN comp_count != all_hydric AND count_maj_comp = maj_hydric THEN 'Predominantly Hydric'
-        WHEN hydric_inclusions >= 0.5 AND  maj_hydric < 0.5 THEN  'Predominantly Nonydric'
-        WHEN maj_not_hydric >= 0.5  AND  maj_hydric >= 0.5 THEN 'Partially Hydric' ELSE 'Error' END AS hydric_rating
-        FROM #main_query
-        LEFT OUTER JOIN #mu_agg2 ON #mu_agg2.mukey=#main_query.mukey"""
-
-    arcpy.AddMessage(potWetQry)
+    SELECT  ---#main_query.areasymbol,
+    ---#main_query.musym,
+     ---#main_query.muname,
+    #main_query.mukey, #mu_agg3.mu_hydric_sum AS PotWetandSoil,
+    CASE WHEN comp_count = all_not_hydric + hydric_null THEN  'Nonhydric'
+    WHEN comp_count = all_hydric  THEN 'Hydric'
+    WHEN comp_count != all_hydric AND count_maj_comp = maj_hydric THEN 'Predominantly Hydric'
+    WHEN hydric_inclusions >= 0.5 AND  maj_hydric < 0.5 THEN  'Predominantly Nonydric'
+    WHEN maj_not_hydric >= 0.5  AND  maj_hydric >= 0.5 THEN 'Partially Hydric' ELSE 'Error' END AS hydric_rating
+    FROM #main_query
+    LEFT OUTER JOIN #mu_agg3 ON #mu_agg3.mukey=#main_query.mukey"""
 
     potWetLogic, potWetMsg, potWetRes = tabRequest(potWetQry, "Potential Wetland")
 
