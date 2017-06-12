@@ -1060,6 +1060,8 @@ def potWet(keys):
         FROM #main_query
         LEFT OUTER JOIN #mu_agg2 ON #mu_agg2.mukey=#main_query.mukey"""
 
+    arcpy.AddMessage(potWetQry)
+
     potWetLogic, potWetMsg, potWetRes = tabRequest(potWetQry, "Potential Wetland")
 
     if potWetLogic:
@@ -2391,16 +2393,6 @@ try:
                         #clip the projeted, sda features to input watesrshed
                         arcpy.analysis.Clip(sdaWGS, ws, finalClip)
 
-                    #get list of mukeys from clipped poly (not convex hull returned from geoRequest)
-                    keys = list()
-                    with arcpy.da.SearchCursor(finalClip, "t_mukey") as rows:
-                        for row in rows:
-                            val = str(row[0])
-                            if not val in keys:
-                                keys.append(val)
-
-                    keys.sort()
-
 
                     #converted the projected, clipped ssurgo features to a raster
                     arcpy.conversion.PolygonToRaster(finalClip, "mukey", outRaster, "MAXIMUM_COMBINED_AREA", None, "10")
@@ -2411,10 +2403,27 @@ try:
                     #populate the field (insertcursors are usually faster)
                     arcpy.management.CalculateField(outRaster, "mukey", "!VALUE!", "PYTHON_9.3")
 
+                    #get list of mukeys from raster (not convex hull returned from geoRequest and
+                    #not from clipped polys, very small polygons on border might not get converted)
+                    keys = list()
+                    with arcpy.da.SearchCursor(outRaster, "mukey") as rows:
+                        for row in rows:
+                            val = str(row[0])
+                            if not val in keys:
+                                keys.append(val)
+
+                    keys.sort()
+
+
+
+
                     #get count of records in raster to ensure same number of records
                     #are returned from SDA queries
-                    cnt = arcpy.management.GetCount(outRaster)
-                    iCnt = int(cnt.getOutput(0))
+                    #cnt = arcpy.management.GetCount(outRaster)
+                    #iCnt = int(cnt.getOutput(0))
+
+                    #no need to run getCount anymore...
+                    iCnt = len(keys)
 
 
                     surfHoriz(keys)
