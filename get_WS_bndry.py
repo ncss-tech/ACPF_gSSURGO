@@ -2383,18 +2383,19 @@ try:
 
                 if grLogic:
 
-                    #if necessary, project the features returned from SDA to input watershed
+                    #project the features returned from SDA to input watershed
                     if tm != "":
                         arcpy.AddMessage("\tReprojecting SDA features to match " + os.path.basename(gdb)[:-4] + " " + wsSR.PCSName + ":" + wsSR.GCS.name)
                         arcpy.management.Project(sdaWGS, prjFeats, wsSR, tm)
-
                         #clip the projeted, sda features to input watesrshed
                         arcpy.analysis.Clip(prjFeats, ws, finalClip)
 
                     else:
-
+                        arcpy.AddMessage("\tReprojecting SDA features to match " + os.path.basename(gdb)[:-4] + " " + wsSR.PCSName + ":" + wsSR.GCS.name)
+                        #project the features returned from SDA to input watershed, no transformation needed
+                        arcpy.management.Project(sdaWGS, prjFeats, wsSR)
                         #clip the projeted, sda features to input watesrshed
-                        arcpy.analysis.Clip(sdaWGS, ws, finalClip)
+                        arcpy.analysis.Clip(prjFeats, ws, finalClip)
 
 
                     #converted the projected, clipped ssurgo features to a raster
