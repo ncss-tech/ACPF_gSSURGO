@@ -50,7 +50,6 @@ def errorMsg():
 
 def tabRequest(qry, name):
 
-
     try:
 
         theURL = "https://sdmdataaccess.nrcs.usda.gov"
@@ -59,50 +58,49 @@ def tabRequest(qry, name):
         # Create request using JSON, return data as JSON
         request = {}
         request["format"] = "JSON+COLUMNNAME+METADATA"
-        request["query"] = qry
+        request["query"] = surfHorQuery
 
-        #json.dumps = serialize obj (request dictionary) to a JSON formatted str
-        data = json.dumps(request)
+        data = urllib.parse.urlencode(request).encode('utf-8')
 
         # Send request to SDA Tabular service using urllib2 library
         # because we are passing the "data" argument, this is a POST request, not a GET
-        req = urllib2.Request(url, data)
-        response = urllib2.urlopen(req)
+        req = urllib.request.Request(url, data)
 
-        # read query results
-        qResults = response.read()
+        with urllib.request.urlopen(req) as response:
+            # read query results
+            qResults = response.read()
 
-        # Convert the returned JSON string into a Python dictionary.
-        qData = json.loads(qResults)
+            qResults = qResults.decode('utf-8')
 
-        # get rid of objects
-        del qResults, response, req
+            # Convert the returned JSON string into a Python dictionary.
+            qData = json.loads(qResults)
 
-        Msg = 'Successfully collected ' + name + ' for ' + ws[3:]
+            # get rid of objects
+            del qResults, response, req
 
         return True, Msg, qData
 
+
     except socket.timeout as e:
-        Msg = 'Soil Data Access timeout error'
-        return False, Msg, None
+    Msg = 'Soil Data Access timeout error'
+    return False, Msg, None
 
     except socket.error as e:
-        Msg = 'Socket error: ' + str(e)
-        return False, Msg, None
+    Msg = 'Socket error: ' + str(e)
+    return False, Msg, None
 
     except HTTPError as e:
-        Msg = 'HTTP Error' + str(e)
-        return False, Msg, None
+    Msg = 'HTTP Error' + str(e)
+    return False, Msg, None
 
     except URLError as e:
-        Msg = 'URL Error' + str(e)
-        return False, Msg, None
+    Msg = 'URL Error' + str(e)
+    return False, Msg, None
 
     except:
-        errorMsg()
-        Msg = 'Unknown error collecting tabular data for ' + ws[3:]
-        return False, Msg, None
-
+    errorMsg()
+    Msg = 'Unknown error collecting tabular data'
+    print(Msg)
 
 
 def surfHoriz(keys):
@@ -333,8 +331,8 @@ def geoRequest(aoi):
 
         # Create request using JSON, return data as JSON
         request = {}
-        request["format"] = "JSON"
-        request["query"] = gQry
+        request["FORMAT"] = "JSON"
+        request["QUERY"] = gQry
 
         #json.dumps = serialize obj (request dictionary) to a JSON formatted str
         data = json.dumps(request)
@@ -2297,8 +2295,9 @@ def CreateNewTable(newTable, columnNames, columnInfo):
 
 #===============================================================================
 
-import sys, os, json, socket, arcpy, urllib2, traceback, datetime
-from urllib2 import HTTPError, URLError
+import sys, os, json, socket, arcpy, urllib.request, traceback, datetime
+from urllib.request import HTTPError, URLError
+
 from arcpy import env
 
 env.overwriteOutput = True
@@ -2318,183 +2317,73 @@ arcpy.AddMessage('\n\n')
 
 try:
 
-    for gdb in usrGDBs:
-        env.workspace = os.path.join(inDir, gdb)
-        bufL = arcpy.ListFeatureClasses("buf*", "Polygon")
-        if len(bufL) == 1:
-
-            ws = bufL[0]
-            arcpy.AddMessage('Processing watershed buffer ' + ws[3:])
-
-            try:
-
-                snapR = arcpy.ListRasters("ws*", None)[-1]
-                env.snapRaster = snapR
-                arcpy.AddMessage("Snap Raster = " + env.snapRaster)
-
-            except:
-
-                arcpy.AddWarning("No snap raster available for "  + ws[3:])
 
 
+        surfHoriz(keys)
+        surfTex(keys)
 
-            profTbl = 'SoilProfile' + ws[3:]
+        #these queries populate the gSSURGO vat, in order
+        #if the logical is False on these, the return message comes from w/ in the function
+        muAggtLogic, tbl = muaggat(keys)
+        if muAggtLogic:
+            dataTbl = os.path.join(inDir,tbl)
+            buildACPF(dataTbl, outRaster)
+            del dataTbl, tbl
 
-            wsSR = arcpy.Describe(ws).spatialReference
-            #wsPrjName = wsSR.PCSName
-
-            validDatums = ["D_WGS_1984", "D_North_American_1983"]
-
-            if not wsSR.GCS.datumName in validDatums:
-                raise MyError , "AOI coordinate system not supported: " + wsSR.name + ", " + wsSR.GCS.datumName
-
-            if wsSR.GCS.datumName == "D_WGS_1984":
-                tm = ""  # no datum transformation required
-
-            elif wsSR.GCS.datumName == "D_North_American_1983":
-                tm = "WGS_1984_(ITRF00)_To_NAD_1983"
-
-            else:
-                raise MyError, "AOI CS datum name: " + wsSR.GCS.datumName
+        rootZnDepLogic, tbl = rootZnDep(keys)
+        if rootZnDepLogic:
+            dataTbl = os.path.join(inDir,tbl)
+            buildACPF(dataTbl, outRaster)
+            del dataTbl, tbl
 
 
-            #outRaster = name for output SSURGO raster w/ input watershed coor system
-            outRaster = "gSSURGO_" + day
+        rootZnAwsDrtLogic, tbl = rootZnAwsDrt(keys)
+        if rootZnAwsDrtLogic:
+            dataTbl = os.path.join(inDir,tbl)
+            buildACPF(dataTbl, outRaster)
+            del dataTbl, tbl
 
-            #sdaWGS = WGS84 features from SDA
-            sdaWGS = "sda_conhull_ACPF_Shape"
+        potWetLogic, tbl = potWet(keys)
+        if potWetLogic:
+            dataTbl = os.path.join(inDir,tbl)
+            buildACPF(dataTbl, outRaster)
+            del dataTbl, tbl
 
-            #prjFeats = WGS84 features from SDA projected back native watershed UTM coor. system
-            prjFeats = env.workspace + os.sep + "sda_ch_ACPF_SSURGO"
-
-            #finalClip = the final projected, native coor sys, clipped ssurgo features
-            finalClip = env.workspace + os.sep + "final_ssurgo_" + ws
-
-            #set spatial reference code for WGS84
-            sdaSR = arcpy.SpatialReference(4326)
-
-            # get generalized coordinates
-            hullLogic, theHull = getHull(ws)
-
-            if hullLogic:
-
-                #feed generalized coordinates to SDA, WGS84 polys are built
-                grLogic, grVal = geoRequest(theHull)
-
-                if grLogic:
-
-                    #project the features returned from SDA to input watershed
-                    if tm != "":
-                        arcpy.AddMessage("\tReprojecting SDA features to match " + os.path.basename(gdb)[:-4] + " " + wsSR.PCSName + ":" + wsSR.GCS.name)
-                        arcpy.management.Project(sdaWGS, prjFeats, wsSR, tm)
-                        #clip the projeted, sda features to input watesrshed
-                        arcpy.analysis.Clip(prjFeats, ws, finalClip)
-
-                    else:
-                        arcpy.AddMessage("\tReprojecting SDA features to match " + os.path.basename(gdb)[:-4] + " " + wsSR.PCSName + ":" + wsSR.GCS.name)
-                        #project the features returned from SDA to input watershed, no transformation needed
-                        arcpy.management.Project(sdaWGS, prjFeats, wsSR)
-                        #clip the projeted, sda features to input watesrshed
-                        arcpy.analysis.Clip(prjFeats, ws, finalClip)
+        #build soil profile table
+        soilProfileTbl(keys)
 
 
-                    #converted the projected, clipped ssurgo features to a raster
-                    arcpy.conversion.PolygonToRaster(finalClip, "mukey", outRaster, "MAXIMUM_COMBINED_AREA", None, "10")
+        #these queries populate the soil profile table, in order
+        #if the logical is False on these, the return message comes from w/ in the function
+        awsLogic, tbl = aws(keys)
+        if awsLogic:
+            dataTbl = os.path.join(inDir,tbl)
+            buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
+            del dataTbl, tbl
 
-                    #add a text, mukey field
-                    arcpy.management.AddField(outRaster, "mukey", "TEXT", None, None, "30")
+        socLogic, tbl = soc(keys)
+        if socLogic:
+            dataTbl = os.path.join(inDir,tbl)
+            buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
+            del dataTbl, tbl
 
-                    #populate the field (insertcursors are usually faster)
-                    arcpy.management.CalculateField(outRaster, "mukey", "!VALUE!", "PYTHON_9.3")
+        omLogic, tbl = om(keys)
+        if omLogic:
+            dataTbl = os.path.join(inDir,tbl)
+            buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
+            del dataTbl, tbl
 
-                    #get list of mukeys from raster (not convex hull returned from geoRequest and
-                    #not from clipped polys, very small polygons on border might not get converted)
-                    keys = list()
-                    with arcpy.da.SearchCursor(outRaster, "mukey") as rows:
-                        for row in rows:
-                            val = str(row[0])
-                            if not val in keys:
-                                keys.append(val)
+        kSatLogic, tbl = ksat50150(keys)
+        if kSatLogic:
+            dataTbl = os.path.join(inDir,tbl)
+            buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
+            del dataTbl, tbl
 
-                    keys.sort()
-
-
-
-
-                    #get count of records in raster to ensure same number of records
-                    #are returned from SDA queries
-                    #cnt = arcpy.management.GetCount(outRaster)
-                    #iCnt = int(cnt.getOutput(0))
-
-                    #no need to run getCount anymore...
-                    iCnt = len(keys)
-
-
-                    surfHoriz(keys)
-                    surfTex(keys)
-
-                    #these queries populate the gSSURGO vat, in order
-                    #if the logical is False on these, the return message comes from w/ in the function
-                    muAggtLogic, tbl = muaggat(keys)
-                    if muAggtLogic:
-                        dataTbl = os.path.join(inDir,tbl)
-                        buildACPF(dataTbl, outRaster)
-                        del dataTbl, tbl
-
-                    rootZnDepLogic, tbl = rootZnDep(keys)
-                    if rootZnDepLogic:
-                        dataTbl = os.path.join(inDir,tbl)
-                        buildACPF(dataTbl, outRaster)
-                        del dataTbl, tbl
-
-
-                    rootZnAwsDrtLogic, tbl = rootZnAwsDrt(keys)
-                    if rootZnAwsDrtLogic:
-                        dataTbl = os.path.join(inDir,tbl)
-                        buildACPF(dataTbl, outRaster)
-                        del dataTbl, tbl
-
-                    potWetLogic, tbl = potWet(keys)
-                    if potWetLogic:
-                        dataTbl = os.path.join(inDir,tbl)
-                        buildACPF(dataTbl, outRaster)
-                        del dataTbl, tbl
-
-                    #build soil profile table
-                    soilProfileTbl(keys)
-
-
-                    #these queries populate the soil profile table, in order
-                    #if the logical is False on these, the return message comes from w/ in the function
-                    awsLogic, tbl = aws(keys)
-                    if awsLogic:
-                        dataTbl = os.path.join(inDir,tbl)
-                        buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
-                        del dataTbl, tbl
-
-                    socLogic, tbl = soc(keys)
-                    if socLogic:
-                        dataTbl = os.path.join(inDir,tbl)
-                        buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
-                        del dataTbl, tbl
-
-                    omLogic, tbl = om(keys)
-                    if omLogic:
-                        dataTbl = os.path.join(inDir,tbl)
-                        buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
-                        del dataTbl, tbl
-
-                    kSatLogic, tbl = ksat50150(keys)
-                    if kSatLogic:
-                        dataTbl = os.path.join(inDir,tbl)
-                        buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
-                        del dataTbl, tbl
-
-                    coarseLogic, tbl = coarseFrag(keys)
-                    if coarseLogic:
-                        dataTbl = os.path.join(inDir,tbl)
-                        buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
-                        del dataTbl, tbl
+        coarseLogic, tbl = coarseFrag(keys)
+        if coarseLogic:
+            dataTbl = os.path.join(inDir,tbl)
+            buildACPF(dataTbl, os.path.join(inDir, gdb, profTbl))
+            del dataTbl, tbl
 
 
                     #separate jobs for legibility
