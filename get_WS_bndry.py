@@ -316,13 +316,13 @@ def geoRequest(aoi):
         ~DeclareIdGeomTable(@intersectedPolygonGeometries)~
         ~GetClippedMapunits(@aoi,polygon,geo,@intersectedPolygonGeometries)~
 
-        --   Convert geometries to geographies so we can get areas
-        ~DeclareIdGeogTable(@intersectedPolygonGeographies)~
-        ~GetGeogFromGeomWgs84(@intersectedPolygonGeometries,@intersectedPolygonGeographies)~
-
         --   Return the polygonal geometries
-        select * from @intersectedPolygonGeographies
-        where geog.STGeometryType() = 'Polygon'"""
+        select * from @intersectedPolygonGeometries
+        where geom.STGeometryType() = 'Polygon'"""
+
+##        --   Convert geometries to geographies so we can get areas
+##        ~DeclareIdGeogTable(@intersectedPolygonGeographies)~
+##        ~GetGeogFromGeomWgs84(@intersectedPolygonGeometries,@intersectedPolygonGeographies)~
 
         #uncomment next line to print geoquery
         #arcpy.AddMessage(gQry)
