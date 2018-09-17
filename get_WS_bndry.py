@@ -87,15 +87,15 @@ def tabRequest(qry, name):
         return False, Msg, None
 
     except socket.error as e:
-        Msg = 'Socket error: ' + str(e)
+        Msg = str(e)
         return False, Msg, None
 
     except HTTPError as e:
-        Msg = 'HTTP Error' + str(e)
+        Msg = str(e)
         return False, Msg, None
 
     except URLError as e:
-        Msg = 'URL Error' + str(e)
+        Msg = str(e)
         return False, Msg, None
 
     except:
@@ -394,15 +394,15 @@ def geoRequest(aoi):
         return False, Msg
 
     except socket.error as e:
-        Msg = 'Socket error: ' + str(e)
+        Msg = str(e)
         return False, Msg
 
     except HTTPError as e:
-        Msg = 'HTTP Error' + str(e)
+        Msg = str(e)
         return False, Msg
 
     except URLError as e:
-        Msg = 'URL Error' + str(e)
+        Msg = str(e)
         return False, Msg
 
     except:
@@ -413,7 +413,8 @@ def geoRequest(aoi):
 
 def muaggat(keys):
 
-    muAgQry = """SELECT
+    """ This is the old NCCPI V2 query-
+         SELECT
     	 mu.mukey,
          muagg.musym as MUsymbol,
          muagg.muname as MUname,
@@ -445,6 +446,58 @@ def muaggat(keys):
          Hydric,
     	 ROUND ((NCCPIcs_First/sum_com),2) AS NCCPIcs,
     	 ROUND ((NCCPIsg_First/sum_com),2) AS NCCPIsg
+     FROM #main
+     DROP TABLE #main"""
+
+    muAgQry = """SELECT
+         mu.mukey,
+         muagg.musym as MUsymbol,
+         muagg.muname as MUname,
+         muagg.wtdepaprjunmin as WTDepAprJun,
+         muagg.flodfreqdcd as FloodFreq,
+         CAST(muagg.pondfreqprs AS smallint) as PondFreq,
+         muagg.drclassdcd as DrainCls,
+         muagg.drclasswettest as DrainClsWet,
+         muagg.hydgrpdcd as HydroGrp,
+         CAST(muagg.hydclprs AS smallint) as Hydric,
+
+     ROUND((SELECT SUM (interphr * comppct_r ) FROM mapunit AS mui1
+        INNER JOIN component AS cint1 ON cint1.mukey=mui1.mukey
+        INNER JOIN cointerp AS coint1 ON cint1.cokey = coint1.cokey   AND majcompflag = 'yes'
+        AND mui1.mukey = mu.mukey AND ruledepth  = 1
+       AND interphrc = 'Corn'
+       AND mrulename = 'NCCPI - National Commodity Crop Productivity Index (Ver 3.0)'
+        GROUP BY mui1.mukey),2) AS NCCPIcs_First,
+
+
+     ROUND((SELECT SUM (interphr * comppct_r)  FROM mapunit AS mui2  INNER JOIN component AS cint2 ON cint2.mukey=mui2.mukey INNER JOIN cointerp AS coint2 ON cint2.cokey = coint2.cokey AND majcompflag = 'yes'  AND mui2.mukey = mu.mukey AND ruledepth  = 1
+        AND mrulename = 'NCCPI - National Commodity Crop Productivity Index (Ver 3.0)'
+        AND interphrc = 'Small grains'
+       AND (interphr) IS NOT NULL GROUP BY mui2.mukey ),2)  as NCCPIsg_First,
+
+    (SELECT SUM (comppct_r) FROM mapunit  AS mui3
+       INNER JOIN component AS cint3 ON cint3.mukey=mui3.mukey
+       INNER JOIN cointerp AS coint3 ON cint3.cokey = coint3.cokey
+       AND majcompflag = 'yes' AND mui3.mukey = mu.mukey AND ruledepth = 0 AND mrulename = 'NCCPI - National Commodity Crop Productivity Index (Ver 3.0)'
+       AND (interphr) IS NOT NULL  GROUP BY mui3.mukey) AS sum_com
+
+     INTO #main
+     FROM (legend INNER JOIN (mapunit AS mu INNER JOIN muaggatt AS muagg ON mu.mukey = muagg.mukey) ON legend.lkey = mu.lkey   --AND mu.mukey IN ('540689'))
+       AND mu.mukey IN (""" + ",".join(map("'{0}'".format, keys)) + """))
+
+       SELECT
+         mukey,
+         MUsymbol,
+         MUname,
+         WTDepAprJun,
+         FloodFreq,
+         PondFreq,
+         DrainCls,
+         DrainClsWet,
+         HydroGrp,
+         Hydric,
+     ROUND ((NCCPIcs_First/sum_com),2) AS NCCPIcs,
+     ROUND ((NCCPIsg_First/sum_com),2) AS NCCPIsg
      FROM #main
      DROP TABLE #main"""
 
